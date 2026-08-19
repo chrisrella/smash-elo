@@ -1,0 +1,18 @@
+{
+  "_comment": "One entry per home series. `owner_ids` are resolved start.gg owner ids (used by collect.py --owner-id). `possible_organizer_tags` are the gamertags Chris knows might own/co-own a series - fill these in and we'll resolve any un-resolved ones to owner ids via the API.",
+
+  "undiscovered_smash": {
+    "possible_organizer_tags": ["Ryan Exists"],
+    "owner_ids": [166752]
+  },
+  "back_from_the_ded": {
+    "possible_organizer_tags": ["Ryan Exists"],
+    "owner_ids": [166752],
+    "note": "Retired series, same organizer account as Undiscovered Smash - one pull covers both."
+  },
+  "encore_smash": {
+    "possible_organizer_tags": [],
+    "owner_ids": [],
+    "note": "Owner lookup off a recent edition (id 93721, 'Barry Paust') only surfaced 2020-era events, so page ownership has likely moved between accounts over time. Need 2-3 candidate tags to check, or fall back to the numbered-slug pattern (encore-smash-weekly-N)."
+  }
+}
