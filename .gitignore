@@ -1,0 +1,13 @@
+#ignore .env so the key isn't pushed
+.env
+
+#ignore virtual environment (in case I use one later
+venv/
+
+#ignore python caches
+__pycache__/
+*.pyc
+
+#ignore generated/pulled data - regenerate via src/collect.py + src/elo.py
+data/raw_sets.csv
+data/elo_ratings.csv

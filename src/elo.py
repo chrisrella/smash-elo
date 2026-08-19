@@ -1,0 +1,85 @@
+"""
+elo.py
+Computes Elo ratings for players from data/raw_sets.csv and prints/saves a
+leaderboard. Sets are processed in chronological order (completedAt), each
+set is one Elo update between the two entrants (set-level, not game-level).
+
+Usage:
+    python src/elo.py
+"""
+
+import csv
+import os
+
+IN_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw_sets.csv")
+OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "elo_ratings.csv")
+
+STARTING_RATING = 1500
+K_FACTOR = 32
+
+
+def expected_score(rating_a, rating_b):
+    return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
+
+
+def load_sets(path):
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = [r for r in csv.DictReader(f) if r.get("completed_at")]
+    rows.sort(key=lambda r: int(r["completed_at"]))
+    return rows
+
+
+def compute_elo(rows):
+    ratings = {}  # entrant_id -> rating
+    names = {}  # entrant_id -> most recently seen name
+    games_played = {}  # entrant_id -> count
+
+    for row in rows:
+        p1, p2 = row["entrant1_player_id"], row["entrant2_player_id"]
+        names[p1] = row["entrant1_name"]
+        names[p2] = row["entrant2_name"]
+        r1 = ratings.setdefault(p1, STARTING_RATING)
+        r2 = ratings.setdefault(p2, STARTING_RATING)
+
+        winner = row["winner_player_id"]
+        score1 = 1.0 if winner == p1 else 0.0
+        score2 = 1.0 - score1
+
+        exp1 = expected_score(r1, r2)
+        exp2 = 1 - exp1
+
+        ratings[p1] = r1 + K_FACTOR * (score1 - exp1)
+        ratings[p2] = r2 + K_FACTOR * (score2 - exp2)
+
+        games_played[p1] = games_played.get(p1, 0) + 1
+        games_played[p2] = games_played.get(p2, 0) + 1
+
+    return ratings, names, games_played
+
+
+def write_leaderboard(ratings, names, games_played, path):
+    leaderboard = sorted(ratings.items(), key=lambda kv: kv[1], reverse=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["rank", "entrant_id", "name", "elo", "sets_played"])
+        for rank, (entrant_id, rating) in enumerate(leaderboard, start=1):
+            writer.writerow(
+                [rank, entrant_id, names[entrant_id], round(rating, 1), games_played[entrant_id]]
+            )
+    return leaderboard
+
+
+def main():
+    rows = load_sets(IN_PATH)
+    print(f"Processing {len(rows)} sets (chronological)...")
+    ratings, names, games_played = compute_elo(rows)
+    leaderboard = write_leaderboard(ratings, names, games_played, OUT_PATH)
+
+    print(f"\n{'Rank':<5}{'Name':<20}{'Elo':<8}{'Sets':<6}")
+    for rank, (entrant_id, rating) in enumerate(leaderboard[:25], start=1):
+        print(f"{rank:<5}{names[entrant_id]:<20}{round(rating):<8}{games_played[entrant_id]:<6}")
+    print(f"\nFull leaderboard written to {OUT_PATH}")
+
+
+if __name__ == "__main__":
+    main()
