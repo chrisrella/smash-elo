@@ -34,16 +34,3 @@ python src/collect.py --max-events 8 tournament/<slug>
 # Compute and print the Elo leaderboard
 python src/elo.py
 ```
-
-## Roadmap / someday
-
-The original idea behind this project was an **upset predictor** — given a
-set's seed difference, character matchup, and player history, estimate the
-odds of the lower seed winning. That's still the long-term direction; the
-Elo ratings here are a step toward a more principled label/feature than raw
-tournament seeding. `data/character-matchup-matrix.csv` is a hand-built
-matchup chart earmarked for that stage.
-
-Known limitation: character-selection data on start.gg is inconsistently
-tracked — usually present for later bracket rounds (top 8ish) and missing
-for early pools/round 1.
