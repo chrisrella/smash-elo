@@ -9,8 +9,10 @@ Usage:
     python src/collect.py tournament/<slug> [tournament/<slug> ...]
 
     # Or auto-discover every edition a given organizer has run (recommended
-    # for recurring weeklies/monthlies - no need to hand-collect slugs)
-    python src/collect.py --owner-id <id>
+    # for recurring weeklies/monthlies - no need to hand-collect slugs).
+    # Accepts multiple ids since page-creation duty often rotates between
+    # a few organizers on the same series - results are merged/deduped.
+    python src/collect.py --owner-id <id> [<id> ...]
 
     # Cap how many events get pulled in one run (large series can have 100+)
     python src/collect.py --max-events 8 tournament/<slug>
@@ -158,10 +160,16 @@ if __name__ == "__main__":
 
     if args and args[0] == "--owner-id":
         require_api_key()
-        owner_id = int(args[1])
-        print(f"Discovering tournaments for owner {owner_id}...")
-        slugs = discover_series_slugs(owner_id)
-        print(f"Found {len(slugs)} tournaments")
+        owner_ids = [int(a) for a in args[1:]]
+        seen = set()
+        slugs = []
+        for owner_id in owner_ids:
+            print(f"Discovering tournaments for owner {owner_id}...")
+            for slug in discover_series_slugs(owner_id):
+                if slug not in seen:
+                    seen.add(slug)
+                    slugs.append(slug)
+        print(f"Found {len(slugs)} unique tournaments across {len(owner_ids)} owner(s)")
         main(slugs, max_events=max_events)
     elif args:
         main(args, max_events=max_events)
