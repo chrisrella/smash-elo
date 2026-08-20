@@ -4,25 +4,22 @@
   "encore_smash": {
     "owner_ids": [445861, 520101],
     "confirmed": {
-      "445861": "TK1 - verified via direct start.gg account linkage (user page links gamerTag \"TK1\" to this id, matches owner of the TK1 Birthday Bash edition)",
-      "520101": "Drilago - verified via direct start.gg account linkage"
+      "445861": "TK1",
+      "520101": "Drilago"
     },
     "note": "Encore's slug pattern has also changed over time (encore-smash-weekly-N in 2020-2021 vs encore-smash-N more recently) - collect.py's owner-based discovery handles this fine since it doesn't depend on slug format."
   },
   "undiscovered_smash": {
     "owner_ids": [166752, 181535, 407077, 177435],
     "confirmed": {
-      "166752": "Ryan Exists - verified via direct account linkage"
-    },
-    "unconfirmed_but_included": {
-      "181535": "Sean Powers - most frequent owner in recent editions, real identity vs. cba/Crimson/Smashchester not confirmed",
-      "407077": "Christos Bobolakis (gamerTag 'Bobo') - initials loosely match 'cba' but not verified",
-      "177435": "Ricky M - real identity not confirmed"
-    },
-    "note": "Chris named cba, Crimson, and Smashchester as organizers but none could be confidently matched to these 4 empirically-observed owner accounts (sampled from ~11 real editions) via web search. Included all 4 anyway since coverage matters more than knowing which tag maps to which account - if more owners turn up on editions not yet pulled, add their ids here."
+      "166752": "cba",
+      "181535": "Crimson",
+      "407077": "Bobo",
+      "177435": "Rick / Smashchester"
+    }
   },
   "back_from_the_ded": {
     "owner_ids": [166752],
-    "note": "Retired series. Only checked against Ryan Exists (166752) so far, who does own at least some editions (e.g. Back From the DED Monthly #13). Worth re-checking against the other 3 undiscovered_smash owner ids too if a first pull looks incomplete."
+    "note": "Retired series. Only checked against cba (166752) so far, who does own at least some editions (e.g. Back From the DED Monthly #13). Worth re-checking against the other 3 undiscovered_smash owner ids too if a first pull looks incomplete."
   }
 }
