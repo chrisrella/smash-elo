@@ -36,7 +36,7 @@ def post(query, variables, retries=5):
             if "errors" in body:
                 raise RuntimeError(f"GraphQL error: {body['errors']}")
             return body["data"]
-        if resp.status_code in (429, 500, 502, 503):
+        if resp.status_code in (429, 500, 502, 503, 520, 521, 522, 523, 524):
             wait = 2 ** attempt
             print(f"  ...got {resp.status_code}, retrying in {wait}s")
             time.sleep(wait)

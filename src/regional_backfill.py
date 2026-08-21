@@ -18,22 +18,38 @@ Usage:
     # Cap how many pages (30 sets/page) to pull per player - a very active
     # competitor can have a long history, so this defaults to recent-only
     python src/regional_backfill.py --max-pages-per-player 3
+
+    # Only backfill players with at least N sets already in raw_sets.csv -
+    # a full home-series history can surface thousands of one-off visitors
+    # who aren't really "in the scene"
+    python src/regional_backfill.py --min-sets 10
 """
 
+import csv
+import os
 import sys
 import time
 
-from set_parsing import OUT_PATH, load_existing_set_ids, parse_set, write_rows, SET_FIELDS
+from set_parsing import OUT_PATH, parse_set, write_rows, SET_FIELDS
 from startgg_client import post, require_api_key
 
 DEFAULT_MAX_PAGES_PER_PLAYER = 5  # ~150 most recent sets per player
+
+# Tracks which players have already been fully backfilled, so an interrupted
+# run can resume without re-walking (and re-querying start.gg for) everyone
+# already done - this can be a long-running job across many resumes.
+PROGRESS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", ".regional_backfill_progress.txt")
+
+PLAYER_SETS_PER_PAGE = 15  # lower than collect.py's 30 - player.sets nodes
+# carry enough nested data (games/selections across many events) that 30/page
+# occasionally exceeds start.gg's query complexity cap (max 1000 objects)
 
 PLAYER_SETS_QUERY = f"""
 query PlayerSets($playerId: ID!, $page: Int!) {{
   player(id: $playerId) {{
     id
     gamerTag
-    sets(page: $page, perPage: 30) {{
+    sets(page: $page, perPage: {PLAYER_SETS_PER_PAGE}) {{
       pageInfo {{ totalPages }}
       nodes {{
         {SET_FIELDS}
@@ -49,21 +65,33 @@ query PlayerSets($playerId: ID!, $page: Int!) {{
 """
 
 
-def local_roster_from_csv(path=OUT_PATH):
-    """Every real (non-fallback) player id already present in raw_sets.csv."""
-    import csv
-    import os
-
+def local_roster_from_csv(path=OUT_PATH, min_sets=1):
+    """Real (non-fallback) player ids present in raw_sets.csv, optionally
+    filtered to players with at least `min_sets` sets already recorded -
+    a full home-series pull surfaces every one-off visitor along with the
+    actual regulars, and most callers only want the latter."""
     if not os.path.exists(path):
         return []
-    ids = set()
+    counts = {}
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             for col in ("entrant1_player_id", "entrant2_player_id"):
                 pid = row.get(col, "")
                 if pid and not pid.startswith("e"):  # skip unlinked-guest fallback ids
-                    ids.add(pid)
-    return sorted(ids)
+                    counts[pid] = counts.get(pid, 0) + 1
+    return sorted(pid for pid, n in counts.items() if n >= min_sets)
+
+
+def load_progress(path=PROGRESS_PATH):
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
+
+
+def mark_done(player_id, path=PROGRESS_PATH):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{player_id}\n")
 
 
 def get_sets_for_player(player_id, max_pages=DEFAULT_MAX_PAGES_PER_PLAYER):
@@ -96,10 +124,22 @@ def get_sets_for_player(player_id, max_pages=DEFAULT_MAX_PAGES_PER_PLAYER):
 
 def main(player_ids, max_pages_per_player=DEFAULT_MAX_PAGES_PER_PLAYER):
     require_api_key()
-    for player_id in player_ids:
+    done = load_progress()
+    remaining = [p for p in player_ids if p not in done]
+    if len(remaining) < len(player_ids):
+        print(f"Skipping {len(player_ids) - len(remaining)} already-backfilled players (resume)")
+    for player_id in remaining:
         print(f"Player {player_id}:")
-        rows = get_sets_for_player(player_id, max_pages=max_pages_per_player)
+        try:
+            rows = get_sets_for_player(player_id, max_pages=max_pages_per_player)
+        except Exception as e:
+            # Don't let one problematic player (e.g. a query-complexity edge
+            # case) kill the whole batch. Not marked done, so a future
+            # resume will retry them.
+            print(f"  ! failed on player {player_id}, skipping: {e}")
+            continue
         write_rows(rows)
+        mark_done(player_id)
 
 
 if __name__ == "__main__":
@@ -110,12 +150,18 @@ if __name__ == "__main__":
         max_pages = int(args[i + 1])
         del args[i : i + 2]
 
+    min_sets = 1
+    if "--min-sets" in args:
+        i = args.index("--min-sets")
+        min_sets = int(args[i + 1])
+        del args[i : i + 2]
+
     if "--player-ids" in args:
         i = args.index("--player-ids")
         player_ids = args[i + 1 :]
     else:
-        player_ids = local_roster_from_csv()
-        print(f"No --player-ids given; derived {len(player_ids)} players from {OUT_PATH}")
+        player_ids = local_roster_from_csv(min_sets=min_sets)
+        print(f"No --player-ids given; derived {len(player_ids)} players from {OUT_PATH} (min_sets={min_sets})")
 
     if not player_ids:
         print("No players to backfill. Run collect.py first, or pass --player-ids.")

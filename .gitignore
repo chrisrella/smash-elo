@@ -8,6 +8,10 @@ venv/
 __pycache__/
 *.pyc
 
+#ignore local Claude Code tooling state
+.claude/
+
 #ignore generated/pulled data - regenerate via src/collect.py + src/elo.py
 data/raw_sets.csv
 data/elo_ratings.csv
+data/.regional_backfill_progress.txt
