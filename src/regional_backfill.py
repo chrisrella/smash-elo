@@ -56,7 +56,8 @@ query PlayerSets($playerId: ID!, $page: Int!) {{
         event {{
           id
           name
-          tournament {{ name }}
+          videogame {{ id }}
+          tournament {{ name addrState countryCode }}
         }}
       }}
     }}
@@ -113,7 +114,13 @@ def get_sets_for_player(player_id, max_pages=DEFAULT_MAX_PAGES_PER_PLAYER):
             tournament = event.get("tournament") or {}
             event_id = event.get("id")
             event_name = f"{tournament.get('name', '')} - {event.get('name', '')}".strip(" -")
-            row = parse_set(node, event_id, event_name)
+            videogame = event.get("videogame") or {}
+            row = parse_set(
+                node, event_id, event_name,
+                videogame_id=videogame.get("id"),
+                tournament_state=tournament.get("addrState"),
+                tournament_country=tournament.get("countryCode"),
+            )
             if row:
                 rows.append(row)
         print(f"  {gamer_tag or player_id}: page {page}/{min(total_pages, max_pages)} -> {len(rows)} sets so far")

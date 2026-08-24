@@ -16,6 +16,9 @@ FIELDNAMES = [
     "set_id",
     "event_id",
     "event_name",
+    "videogame_id",
+    "tournament_state",
+    "tournament_country",
     "round",
     "completed_at",
     "entrant1_id",
@@ -92,8 +95,12 @@ def _characters_for(entrant_id, games):
     return seen
 
 
-def parse_set(node, event_id, event_name):
+def parse_set(node, event_id, event_name, videogame_id=None, tournament_state=None, tournament_country=None):
     """node: a raw `Set` GraphQL node (must include SET_FIELDS).
+    videogame_id/tournament_state/tournament_country: caller-supplied context
+    (not part of SET_FIELDS itself, since collect.py already knows these per
+    event/tournament and regional_backfill.py fetches them per-node - see
+    each caller for how they're sourced).
     Returns a FIELDNAMES-shaped row dict, or None for byes/incomplete sets."""
     slots = node.get("slots") or []
     if len(slots) != 2 or not slots[0]["entrant"] or not slots[1]["entrant"]:
@@ -126,6 +133,9 @@ def parse_set(node, event_id, event_name):
         "set_id": node["id"],
         "event_id": event_id,
         "event_name": event_name,
+        "videogame_id": videogame_id,
+        "tournament_state": tournament_state,
+        "tournament_country": tournament_country,
         "round": node.get("fullRoundText"),
         "completed_at": completed_at,
         "entrant1_id": e1["id"],

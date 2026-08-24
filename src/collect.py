@@ -32,6 +32,8 @@ query TournamentEvents($slug: String!) {
   tournament(slug: $slug) {
     id
     name
+    addrState
+    countryCode
     events {
       id
       name
@@ -95,21 +97,24 @@ def discover_series_slugs(owner_id, max_tournaments=None):
 
 
 def get_ultimate_events(tournament_slug):
-    """Return list of (event_id, event_name) for Ultimate events in a tournament."""
+    """Return list of (event_id, event_name, tournament_state, tournament_country)
+    for Ultimate events in a tournament."""
     data = post(EVENTS_QUERY, {"slug": tournament_slug})
     tournament = data.get("tournament")
     if tournament is None:
         print(f"  ! tournament not found: {tournament_slug}")
         return []
+    state = tournament.get("addrState")
+    country = tournament.get("countryCode")
     events = tournament.get("events") or []
     return [
-        (e["id"], e["name"])
+        (e["id"], e["name"], state, country)
         for e in events
         if e.get("videogame") and e["videogame"]["id"] == ULTIMATE_VIDEOGAME_ID
     ]
 
 
-def get_sets_for_event(event_id, event_name):
+def get_sets_for_event(event_id, event_name, tournament_state, tournament_country):
     rows = []
     page = 1
     total_pages = 1
@@ -121,7 +126,12 @@ def get_sets_for_event(event_id, event_name):
         sets_block = event["sets"]
         total_pages = sets_block["pageInfo"]["totalPages"] or 1
         for node in sets_block["nodes"]:
-            row = parse_set(node, event_id, event_name)
+            row = parse_set(
+                node, event_id, event_name,
+                videogame_id=ULTIMATE_VIDEOGAME_ID,
+                tournament_state=tournament_state,
+                tournament_country=tournament_country,
+            )
             if row:
                 rows.append(row)
         print(f"  page {page}/{total_pages} -> {len(rows)} sets so far")
@@ -140,12 +150,12 @@ def main(slugs, max_events=None):
         if not events:
             print("  no Ultimate events found")
             continue
-        for event_id, event_name in events:
+        for event_id, event_name, tournament_state, tournament_country in events:
             if max_events is not None and events_pulled >= max_events:
                 print(f"  reached max_events={max_events}, stopping")
                 return
             print(f" Event: {event_name} ({event_id})")
-            rows = get_sets_for_event(event_id, event_name)
+            rows = get_sets_for_event(event_id, event_name, tournament_state, tournament_country)
             write_rows(rows)  # write per event so nothing is lost if interrupted
             events_pulled += 1
 
