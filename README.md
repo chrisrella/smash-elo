@@ -26,7 +26,9 @@ Two-tier collection, one shared data model:
 - `src/elo.py` processes `data/raw_sets.csv` in chronological order and
   computes an Elo rating per player, correctly tracked across events via
   start.gg's stable player id (not the event-scoped entrant id). Output
-  goes to `data/elo_ratings.csv`.
+  goes to `data/elo_ratings.csv`, and every run also drops a timestamped
+  snapshot in `data/elo_history/` (optionally tagged with `--label`) so
+  successive runs can be compared against each other.
 - `config/organizers.json` - known/candidate organizer ids for each home
   series, kept separate from code so it's easy to edit by hand.
 
@@ -60,6 +62,7 @@ python src/collect.py --max-events 8 --owner-id <id>
 # Tier 2: backfill regional/out-of-area sets for everyone already in raw_sets.csv
 python src/regional_backfill.py
 
-# Compute and print the Elo leaderboard
+# Compute and print the Elo leaderboard (also saves a snapshot to data/elo_history/)
 python src/elo.py
+python src/elo.py --label post-region-game-filter
 ```

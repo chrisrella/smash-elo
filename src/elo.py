@@ -4,15 +4,23 @@ Computes Elo ratings for players from data/raw_sets.csv and prints/saves a
 leaderboard. Sets are processed in chronological order (completedAt), each
 set is one Elo update between the two entrants (set-level, not game-level).
 
+Every run also saves a timestamped snapshot to data/elo_history/, so
+successive pipeline runs (e.g. before/after a data-quality fix) can be
+compared against each other rather than only ever seeing the latest.
+
 Usage:
     python src/elo.py
+    python src/elo.py --label post-region-filter   # tag the snapshot
 """
 
 import csv
+import datetime
 import os
+import sys
 
 IN_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw_sets.csv")
 OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "elo_ratings.csv")
+HISTORY_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "elo_history")
 
 STARTING_RATING = 1500
 K_FACTOR = 32
@@ -69,7 +77,14 @@ def write_leaderboard(ratings, names, games_played, path):
     return leaderboard
 
 
-def main():
+def snapshot_path(label=None):
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    name = f"elo_ratings_{stamp}" + (f"_{label}" if label else "") + ".csv"
+    return os.path.join(HISTORY_DIR, name)
+
+
+def main(label=None):
     rows = load_sets(IN_PATH)
     print(f"Processing {len(rows)} sets (chronological)...")
     ratings, names, games_played = compute_elo(rows)
@@ -80,6 +95,15 @@ def main():
         print(f"{rank:<5}{names[entrant_id]:<20}{round(rating):<8}{games_played[entrant_id]:<6}")
     print(f"\nFull leaderboard written to {OUT_PATH}")
 
+    snap_path = snapshot_path(label)
+    write_leaderboard(ratings, names, games_played, snap_path)
+    print(f"Snapshot saved to {snap_path}")
+
 
 if __name__ == "__main__":
-    main()
+    args = sys.argv[1:]
+    label = None
+    if "--label" in args:
+        i = args.index("--label")
+        label = args[i + 1]
+    main(label=label)
