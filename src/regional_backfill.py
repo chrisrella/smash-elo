@@ -4,9 +4,12 @@ Tier 2: given a roster of "local" player IDs (by default, derived from
 whoever already shows up in data/raw_sets.csv via collect.py's home-series
 pull), fetch each player's full start.gg set history and merge it in.
 
-This is how out-of-area events get captured (CT/NJ/Long Island/NYC, majors,
-etc.) without having to pre-guess which regional tournaments matter - we
-follow the players instead of the tournaments.
+This is how out-of-area events get captured (CT/NJ/Long Island/NYC) without
+having to pre-guess which regional tournaments matter - we follow the
+players instead of the tournaments. Results are filtered to Ultimate sets
+in NY/NJ/CT only (ALLOWED_STATES) - a player's full start.gg history spans
+every game and region they've ever competed in, so majors/other-game
+brackets get dropped here rather than polluting the local scene's ratings.
 
 Usage:
     # Backfill everyone already seen in data/raw_sets.csv
@@ -31,9 +34,14 @@ import sys
 import time
 
 from set_parsing import OUT_PATH, parse_set, write_rows, SET_FIELDS
-from startgg_client import post, require_api_key
+from startgg_client import ULTIMATE_VIDEOGAME_ID, post, require_api_key
 
 DEFAULT_MAX_PAGES_PER_PLAYER = 5  # ~150 most recent sets per player
+
+# Regional travel means the tristate area, not "anywhere a local ever went" -
+# a player's full start.gg history spans every game and every region they've
+# ever competed in, so both need to be filtered at ingestion.
+ALLOWED_STATES = {"NY", "NJ", "CT"}
 
 # Tracks which players have already been fully backfilled, so an interrupted
 # run can resume without re-walking (and re-querying start.gg for) everyone
@@ -97,6 +105,8 @@ def mark_done(player_id, path=PROGRESS_PATH):
 
 def get_sets_for_player(player_id, max_pages=DEFAULT_MAX_PAGES_PER_PLAYER):
     rows = []
+    skipped_game = 0
+    skipped_region = 0
     page = 1
     total_pages = 1
     gamer_tag = None
@@ -114,16 +124,27 @@ def get_sets_for_player(player_id, max_pages=DEFAULT_MAX_PAGES_PER_PLAYER):
             tournament = event.get("tournament") or {}
             event_id = event.get("id")
             event_name = f"{tournament.get('name', '')} - {event.get('name', '')}".strip(" -")
-            videogame = event.get("videogame") or {}
+            videogame_id = (event.get("videogame") or {}).get("id")
+            tournament_state = tournament.get("addrState")
+            tournament_country = tournament.get("countryCode")
+
+            if videogame_id != ULTIMATE_VIDEOGAME_ID:
+                skipped_game += 1
+                continue
+            if tournament_state not in ALLOWED_STATES:
+                skipped_region += 1
+                continue
+
             row = parse_set(
                 node, event_id, event_name,
-                videogame_id=videogame.get("id"),
-                tournament_state=tournament.get("addrState"),
-                tournament_country=tournament.get("countryCode"),
+                videogame_id=videogame_id,
+                tournament_state=tournament_state,
+                tournament_country=tournament_country,
             )
             if row:
                 rows.append(row)
-        print(f"  {gamer_tag or player_id}: page {page}/{min(total_pages, max_pages)} -> {len(rows)} sets so far")
+        print(f"  {gamer_tag or player_id}: page {page}/{min(total_pages, max_pages)} -> {len(rows)} sets so far"
+              f" ({skipped_game} non-Ultimate, {skipped_region} out-of-region skipped)")
         page += 1
         time.sleep(0.6)
     return rows
