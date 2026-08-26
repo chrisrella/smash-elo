@@ -11,7 +11,8 @@ __pycache__/
 #ignore local Claude Code tooling state
 .claude/
 
-#ignore generated/pulled data - regenerate via src/collect.py + src/elo.py
+#ignore generated/pulled data - regenerate via src/collect.py + src/elo.py/glicko.py
 data/raw_sets.csv
 data/elo_ratings.csv
+data/glicko_ratings.csv
 data/.regional_backfill_progress.txt

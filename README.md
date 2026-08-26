@@ -29,6 +29,14 @@ Two-tier collection, one shared data model:
   goes to `data/elo_ratings.csv`, and every run also drops a timestamped
   snapshot in `data/elo_history/` (optionally tagged with `--label`) so
   successive runs can be compared against each other.
+- `src/glicko.py` computes Glicko-2 ratings instead - unlike Elo, it
+  tracks a rating deviation (RD, confidence) per player and ranks by a
+  conservative estimate (`rating - 2*RD`), so a high rating built on a
+  small or weakly-connected sample doesn't outrank a well-tested one.
+  Games are batched into weekly rating periods per the Glicko-2 spec.
+  Self-validates against Glickman's published reference values on import.
+  Output/history work the same way as `elo.py` (`data/glicko_ratings.csv`,
+  `data/glicko_history/`).
 - `config/organizers.json` - known/candidate organizer ids for each home
   series, kept separate from code so it's easy to edit by hand.
 
@@ -65,4 +73,7 @@ python src/regional_backfill.py
 # Compute and print the Elo leaderboard (also saves a snapshot to data/elo_history/)
 python src/elo.py
 python src/elo.py --label post-region-game-filter
+
+# Or the Glicko-2 leaderboard (saves to data/glicko_history/)
+python src/glicko.py --label first-run
 ```
