@@ -7,9 +7,18 @@ pull), fetch each player's full start.gg set history and merge it in.
 This is how out-of-area events get captured (CT/NJ/Long Island/NYC) without
 having to pre-guess which regional tournaments matter - we follow the
 players instead of the tournaments. Results are filtered to Ultimate sets
-in NY/NJ/CT only (ALLOWED_STATES) - a player's full start.gg history spans
-every game and region they've ever competed in, so majors/other-game
-brackets get dropped here rather than polluting the local scene's ratings.
+within MAX_DISTANCE_MILES of home (great-circle distance from each
+tournament's real lat/lng) - a player's full start.gg history spans every
+game and every region they've ever competed in, so majors/other-game
+brackets and distant scenes get dropped here rather than polluting the
+local scene's ratings.
+
+A plain state-code filter (addrState == "NY") isn't precise enough: NY
+state alone spans Westchester to Buffalo, ~400 miles. A real sample of
+this dataset's tournaments showed a clean gap - legitimate tristate/lower-
+Hudson-Valley scenes all fall within ~114 miles of Westchester, then nothing
+until ~245 miles (Rochester and beyond) - so a 150mi radius has comfortable
+margin on both sides without needing a hand-maintained city list.
 
 Usage:
     # Backfill everyone already seen in data/raw_sets.csv
@@ -29,6 +38,7 @@ Usage:
 """
 
 import csv
+import math
 import os
 import sys
 import time
@@ -38,10 +48,21 @@ from startgg_client import ULTIMATE_VIDEOGAME_ID, post, require_api_key
 
 DEFAULT_MAX_PAGES_PER_PLAYER = 5  # ~150 most recent sets per player
 
-# Regional travel means the tristate area, not "anywhere a local ever went" -
-# a player's full start.gg history spans every game and every region they've
-# ever competed in, so both need to be filtered at ingestion.
-ALLOWED_STATES = {"NY", "NJ", "CT"}
+# Home base for the distance filter (White Plains, NY - Undiscovered Smash's
+# venue, roughly central to the Westchester scene) and the radius, chosen
+# from a real sample of this dataset's tournaments (see module docstring).
+HOME_LAT, HOME_LNG = 41.0345828, -73.7850624
+MAX_DISTANCE_MILES = 150
+
+
+def miles_between(lat1, lng1, lat2, lng2):
+    """Great-circle (haversine) distance in miles."""
+    earth_radius_mi = 3958.8
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * earth_radius_mi * math.asin(math.sqrt(a))
 
 # Tracks which players have already been fully backfilled, so an interrupted
 # run can resume without re-walking (and re-querying start.gg for) everyone
@@ -65,7 +86,7 @@ query PlayerSets($playerId: ID!, $page: Int!) {{
           id
           name
           videogame {{ id }}
-          tournament {{ name addrState countryCode }}
+          tournament {{ name addrState countryCode lat lng }}
         }}
       }}
     }}
@@ -107,6 +128,7 @@ def get_sets_for_player(player_id, max_pages=DEFAULT_MAX_PAGES_PER_PLAYER):
     rows = []
     skipped_game = 0
     skipped_region = 0
+    skipped_no_location = 0
     page = 1
     total_pages = 1
     gamer_tag = None
@@ -127,11 +149,17 @@ def get_sets_for_player(player_id, max_pages=DEFAULT_MAX_PAGES_PER_PLAYER):
             videogame_id = (event.get("videogame") or {}).get("id")
             tournament_state = tournament.get("addrState")
             tournament_country = tournament.get("countryCode")
+            lat, lng = tournament.get("lat"), tournament.get("lng")
 
             if videogame_id != ULTIMATE_VIDEOGAME_ID:
                 skipped_game += 1
                 continue
-            if tournament_state not in ALLOWED_STATES:
+            if lat is None or lng is None:
+                # Can't confirm distance (e.g. online-only events without a
+                # geocoded address) - exclude rather than assume in-region.
+                skipped_no_location += 1
+                continue
+            if miles_between(HOME_LAT, HOME_LNG, lat, lng) > MAX_DISTANCE_MILES:
                 skipped_region += 1
                 continue
 
@@ -144,7 +172,7 @@ def get_sets_for_player(player_id, max_pages=DEFAULT_MAX_PAGES_PER_PLAYER):
             if row:
                 rows.append(row)
         print(f"  {gamer_tag or player_id}: page {page}/{min(total_pages, max_pages)} -> {len(rows)} sets so far"
-              f" ({skipped_game} non-Ultimate, {skipped_region} out-of-region skipped)")
+              f" ({skipped_game} non-Ultimate, {skipped_region} out-of-region, {skipped_no_location} no-location skipped)")
         page += 1
         time.sleep(0.6)
     return rows
