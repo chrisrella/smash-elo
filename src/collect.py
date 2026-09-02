@@ -21,11 +21,29 @@ Example:
     python src/collect.py tournament/atlantis-series
 """
 
+import os
 import sys
 import time
 
 from set_parsing import parse_set, write_rows, SET_FIELDS
 from startgg_client import ULTIMATE_VIDEOGAME_ID, post, require_api_key
+
+# Tracks which tournament slugs have been fully pulled, so an interrupted
+# run can resume without re-walking (and re-querying start.gg for) every
+# already-done tournament - large series can take many resumes.
+PROGRESS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", ".collect_progress.txt")
+
+
+def load_progress(path=PROGRESS_PATH):
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
+
+
+def mark_done(slug, path=PROGRESS_PATH):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{slug}\n")
 
 EVENTS_QUERY = """
 query TournamentEvents($slug: String!) {
@@ -143,21 +161,28 @@ def get_sets_for_event(event_id, event_name, tournament_state, tournament_countr
 def main(slugs, max_events=None):
     require_api_key()
 
+    done = load_progress()
+    remaining = [s for s in slugs if s not in done]
+    if len(remaining) < len(slugs):
+        print(f"Skipping {len(slugs) - len(remaining)} already-pulled tournaments (resume)")
+
     events_pulled = 0
-    for slug in slugs:
+    for slug in remaining:
         print(f"Tournament: {slug}")
         events = get_ultimate_events(slug)
         if not events:
             print("  no Ultimate events found")
+            mark_done(slug)
             continue
         for event_id, event_name, tournament_state, tournament_country in events:
             if max_events is not None and events_pulled >= max_events:
                 print(f"  reached max_events={max_events}, stopping")
-                return
+                return  # slug not marked done - it wasn't fully pulled
             print(f" Event: {event_name} ({event_id})")
             rows = get_sets_for_event(event_id, event_name, tournament_state, tournament_country)
             write_rows(rows)  # write per event so nothing is lost if interrupted
             events_pulled += 1
+        mark_done(slug)
 
 
 if __name__ == "__main__":

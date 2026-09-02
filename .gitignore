@@ -16,3 +16,4 @@ data/raw_sets.csv
 data/elo_ratings.csv
 data/glicko_ratings.csv
 data/.regional_backfill_progress.txt
+data/.collect_progress.txt
