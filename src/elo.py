@@ -8,6 +8,13 @@ Every run also saves a timestamped snapshot to data/elo_history/, so
 successive pipeline runs (e.g. before/after a data-quality fix) can be
 compared against each other rather than only ever seeing the latest.
 
+Ratings are computed from every set in raw_sets.csv (including a one-time
+visitor's results - those are still real signal about the locals who
+played them), but the leaderboard itself only ranks players with at least
+one home-series (Encore/Undiscovered/BFTD) appearance. Otherwise someone
+who drove in once for a single big regional invitational can top the
+leaderboard off a handful of sets without ever being part of the scene.
+
 Usage:
     python src/elo.py
     python src/elo.py --label post-region-filter   # tag the snapshot
@@ -17,6 +24,8 @@ import csv
 import datetime
 import os
 import sys
+
+from set_parsing import home_series_player_ids
 
 IN_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw_sets.csv")
 OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "elo_ratings.csv")
@@ -65,8 +74,11 @@ def compute_elo(rows):
     return ratings, names, games_played
 
 
-def write_leaderboard(ratings, names, games_played, path):
-    leaderboard = sorted(ratings.items(), key=lambda kv: kv[1], reverse=True)
+def write_leaderboard(ratings, names, games_played, path, eligible_ids=None):
+    pool = ratings.items() if eligible_ids is None else (
+        (pid, r) for pid, r in ratings.items() if pid in eligible_ids
+    )
+    leaderboard = sorted(pool, key=lambda kv: kv[1], reverse=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["rank", "entrant_id", "name", "elo", "sets_played"])
@@ -88,7 +100,9 @@ def main(label=None):
     rows = load_sets(IN_PATH)
     print(f"Processing {len(rows)} sets (chronological)...")
     ratings, names, games_played = compute_elo(rows)
-    leaderboard = write_leaderboard(ratings, names, games_played, OUT_PATH)
+    eligible = home_series_player_ids(rows)
+    print(f"{len(eligible)}/{len(ratings)} players have a home-series appearance (leaderboard-eligible)")
+    leaderboard = write_leaderboard(ratings, names, games_played, OUT_PATH, eligible_ids=eligible)
 
     print(f"\n{'Rank':<5}{'Name':<20}{'Elo':<8}{'Sets':<6}")
     for rank, (entrant_id, rating) in enumerate(leaderboard[:25], start=1):
@@ -96,7 +110,7 @@ def main(label=None):
     print(f"\nFull leaderboard written to {OUT_PATH}")
 
     snap_path = snapshot_path(label)
-    write_leaderboard(ratings, names, games_played, snap_path)
+    write_leaderboard(ratings, names, games_played, snap_path, eligible_ids=eligible)
     print(f"Snapshot saved to {snap_path}")
 
 

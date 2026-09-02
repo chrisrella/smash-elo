@@ -16,6 +16,13 @@ Games are grouped into weekly rating periods and applied as a single batch
 update per player per period (per spec - this is not the sequential
 game-by-game update Elo uses).
 
+Ratings are computed from every set in raw_sets.csv, but the leaderboard
+only ranks players with at least one home-series (Encore/Undiscovered/
+BFTD) appearance - otherwise a strong outsider who drove in once for a
+single regional invitational can top the board off a handful of sets
+without ever being part of the scene (their results still count toward
+calibrating the locals who actually played them).
+
 Usage:
     python src/glicko.py
     python src/glicko.py --label <tag>
@@ -26,6 +33,8 @@ import datetime
 import math
 import os
 import sys
+
+from set_parsing import home_series_player_ids
 
 IN_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw_sets.csv")
 OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "glicko_ratings.csv")
@@ -240,12 +249,15 @@ def compute_glicko(rows):
     return ratings, rds, names, games_played
 
 
-def write_leaderboard(ratings, rds, names, games_played, path):
+def write_leaderboard(ratings, rds, names, games_played, path, eligible_ids=None):
     # Rank by conservative rating (rating - 2*RD), not raw rating - this is
     # the whole point: a high point-estimate propped up by a small,
     # uncertain sample shouldn't outrank a well-tested, well-calibrated one.
     conservative = {pid: ratings[pid] - 2 * rds[pid] for pid in ratings}
-    leaderboard = sorted(conservative.items(), key=lambda kv: kv[1], reverse=True)
+    pool = conservative.items() if eligible_ids is None else (
+        (pid, c) for pid, c in conservative.items() if pid in eligible_ids
+    )
+    leaderboard = sorted(pool, key=lambda kv: kv[1], reverse=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["rank", "player_id", "name", "conservative_rating", "rating", "rd", "sets_played"])
@@ -267,7 +279,9 @@ def main(label=None):
     rows = load_sets(IN_PATH)
     print(f"Processing {len(rows)} sets across weekly rating periods...")
     ratings, rds, names, games_played = compute_glicko(rows)
-    leaderboard = write_leaderboard(ratings, rds, names, games_played, OUT_PATH)
+    eligible = home_series_player_ids(rows)
+    print(f"{len(eligible)}/{len(ratings)} players have a home-series appearance (leaderboard-eligible)")
+    leaderboard = write_leaderboard(ratings, rds, names, games_played, OUT_PATH, eligible_ids=eligible)
 
     print(f"\n{'Rank':<5}{'Name':<20}{'Cons.':<8}{'Rating':<8}{'RD':<7}{'Sets':<6}")
     for rank, (pid, cons) in enumerate(leaderboard[:25], start=1):
@@ -275,7 +289,7 @@ def main(label=None):
     print(f"\nFull leaderboard written to {OUT_PATH}")
 
     snap_path = snapshot_path(label)
-    write_leaderboard(ratings, rds, names, games_played, snap_path)
+    write_leaderboard(ratings, rds, names, games_played, snap_path, eligible_ids=eligible)
     print(f"Snapshot saved to {snap_path}")
 
 

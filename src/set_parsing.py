@@ -178,3 +178,26 @@ def write_rows(rows, path=OUT_PATH):
             writer.writerow(row)
     print(f"  wrote {len(new_rows)} new rows ({len(rows) - len(new_rows)} already present)")
     return new_rows
+
+
+# Substrings identifying a home-series (Tier 1) event_name - these are the
+# only tournaments collect.py pulls, so any row matching one of these came
+# from your actual recurring local series, not a one-off regional visit
+# picked up via regional_backfill.py.
+HOME_SERIES_MARKERS = ("Encore Smash", "Undiscovered Smash", "Back From")
+
+
+def home_series_player_ids(rows):
+    """Player ids with at least one home-series appearance. Used to keep a
+    player's *results* in the rating calculation (their wins/losses are
+    still real signal about the locals who played them) while excluding
+    them from the ranked leaderboard itself if they never actually showed
+    up to a home series - e.g. a strong player who drove in for one big
+    regional invitational and topped the leaderboard off a handful of sets
+    without ever being "in the scene." """
+    ids = set()
+    for row in rows:
+        if any(marker in row["event_name"] for marker in HOME_SERIES_MARKERS):
+            ids.add(row["entrant1_player_id"])
+            ids.add(row["entrant2_player_id"])
+    return ids
