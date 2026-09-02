@@ -28,9 +28,18 @@ def post(query, variables, retries=5):
     """POST a GraphQL query, retrying with backoff on rate limits / transient errors."""
     resp = None
     for attempt in range(retries):
-        resp = requests.post(
-            ENDPOINT, json={"query": query, "variables": variables}, headers=HEADERS
-        )
+        try:
+            resp = requests.post(
+                ENDPOINT, json={"query": query, "variables": variables}, headers=HEADERS, timeout=30
+            )
+        except requests.exceptions.RequestException as e:
+            # Network-level failure (connection reset, timeout, DNS blip) -
+            # happens before any HTTP status code exists, so it bypasses the
+            # status-code retry logic below entirely unless caught here.
+            wait = 2 ** attempt
+            print(f"  ...network error ({e.__class__.__name__}), retrying in {wait}s")
+            time.sleep(wait)
+            continue
         if resp.status_code == 200:
             body = resp.json()
             if "errors" in body:
@@ -42,4 +51,4 @@ def post(query, variables, retries=5):
             time.sleep(wait)
             continue
         resp.raise_for_status()
-    raise RuntimeError(f"Failed after {retries} retries: {resp.status_code} {resp.text}")
+    raise RuntimeError(f"Failed after {retries} retries: {resp.status_code if resp else 'no response'}")
