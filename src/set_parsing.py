@@ -8,6 +8,7 @@ produce rows in the same shape.
 """
 
 import csv
+import datetime
 import os
 
 OUT_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "raw_sets.csv")
@@ -187,17 +188,46 @@ def write_rows(rows, path=OUT_PATH):
 HOME_SERIES_MARKERS = ("Encore Smash", "Undiscovered Smash", "Back From")
 
 
-def home_series_player_ids(rows):
-    """Player ids with at least one home-series appearance. Used to keep a
+MIN_HOME_SERIES_DATES = 3  # distinct home-series dates required to count as "actually local"
+RECENCY_DAYS = 365  # must have a home-series set within this many days of the most recent data
+
+
+def home_series_player_ids(rows, min_dates=MIN_HOME_SERIES_DATES, recency_days=RECENCY_DAYS):
+    """Player ids eligible for the ranked leaderboard. Used to keep a
     player's *results* in the rating calculation (their wins/losses are
     still real signal about the locals who played them) while excluding
-    them from the ranked leaderboard itself if they never actually showed
-    up to a home series - e.g. a strong player who drove in for one big
-    regional invitational and topped the leaderboard off a handful of sets
-    without ever being "in the scene." """
-    ids = set()
-    for row in rows:
-        if any(marker in row["event_name"] for marker in HOME_SERIES_MARKERS):
-            ids.add(row["entrant1_player_id"])
-            ids.add(row["entrant2_player_id"])
-    return ids
+    them from the leaderboard itself unless they're actually a current
+    local - two distinct failure modes this guards against, both found by
+    spot-checking real names against the leaderboard:
+
+    - A traveling player who visited once and went deep in bracket (many
+      sets, but all on the same day) - so eligibility is counted in
+      distinct home-series *dates*, not raw set count, and requires
+      several of them, not just one.
+    - A long-retired player whose old rating just sits on the board
+      forever, since Elo has no decay mechanism - so eligibility also
+      requires a home-series set within `recency_days` of the most recent
+      set in the whole dataset (not wall-clock "now", so this is stable
+      no matter when the pipeline last ran).
+    """
+    home_rows = [r for r in rows if any(marker in r["event_name"] for marker in HOME_SERIES_MARKERS)]
+    if not home_rows:
+        return set()
+
+    latest_overall = max(int(r["completed_at"]) for r in rows)
+    cutoff = latest_overall - recency_days * 86400
+
+    dates_by_player = {}  # player_id -> set of distinct calendar dates
+    most_recent_by_player = {}  # player_id -> latest home-series completed_at
+    for row in home_rows:
+        day = datetime.date.fromtimestamp(int(row["completed_at"])).isoformat()
+        ts = int(row["completed_at"])
+        for pid in (row["entrant1_player_id"], row["entrant2_player_id"]):
+            dates_by_player.setdefault(pid, set()).add(day)
+            most_recent_by_player[pid] = max(most_recent_by_player.get(pid, 0), ts)
+
+    return {
+        pid
+        for pid, dates in dates_by_player.items()
+        if len(dates) >= min_dates and most_recent_by_player[pid] >= cutoff
+    }
