@@ -46,10 +46,17 @@ def load_sets(path):
     return rows
 
 
-def compute_elo(rows):
+def compute_elo(rows, record_history=False):
+    """record_history=True additionally returns pre_match: dict of
+    set_id -> (r1_pre, r2_pre, games1_pre, games2_pre), i.e. each player's
+    rating and experience *before* that set was applied. This is what a
+    predictive model has to train on - using the final leaderboard rating
+    to "predict" an old match would be leaking the outcome of every match
+    that happened after it."""
     ratings = {}  # entrant_id -> rating
     names = {}  # entrant_id -> most recently seen name
     games_played = {}  # entrant_id -> count
+    pre_match = {} if record_history else None
 
     for row in rows:
         p1, p2 = row["entrant1_player_id"], row["entrant2_player_id"]
@@ -57,6 +64,10 @@ def compute_elo(rows):
         names[p2] = row["entrant2_name"]
         r1 = ratings.setdefault(p1, STARTING_RATING)
         r2 = ratings.setdefault(p2, STARTING_RATING)
+        g1, g2 = games_played.get(p1, 0), games_played.get(p2, 0)
+
+        if record_history:
+            pre_match[row["set_id"]] = (r1, r2, g1, g2)
 
         winner = row["winner_player_id"]
         score1 = 1.0 if winner == p1 else 0.0
@@ -68,9 +79,11 @@ def compute_elo(rows):
         ratings[p1] = r1 + K_FACTOR * (score1 - exp1)
         ratings[p2] = r2 + K_FACTOR * (score2 - exp2)
 
-        games_played[p1] = games_played.get(p1, 0) + 1
-        games_played[p2] = games_played.get(p2, 0) + 1
+        games_played[p1] = g1 + 1
+        games_played[p2] = g2 + 1
 
+    if record_history:
+        return ratings, names, games_played, pre_match
     return ratings, names, games_played
 
 
