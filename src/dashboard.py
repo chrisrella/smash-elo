@@ -29,7 +29,9 @@ st.set_page_config(page_title="Smash Ult Upset Predictor", page_icon="🎮", lay
 
 @st.cache_data
 def load_leaderboard():
-    elo = pd.read_csv(ELO_PATH).rename(columns={"entrant_id": "player_id", "elo": "elo_rating"})
+    # Drop elo.py's own rank column - the dashboard re-ranks by conservative Glicko below.
+    elo = pd.read_csv(ELO_PATH).drop(columns=["rank"], errors="ignore")
+    elo = elo.rename(columns={"entrant_id": "player_id", "elo": "elo_rating"})
     glicko = pd.read_csv(GLICKO_PATH)[["player_id", "conservative_rating", "rating", "rd"]]
     glicko = glicko.rename(columns={"rating": "glicko_rating", "rd": "glicko_rd"})
     merged = elo.merge(glicko, on="player_id", how="inner")
