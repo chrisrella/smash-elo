@@ -17,6 +17,11 @@ data/elo_ratings.csv
 data/glicko_ratings.csv
 data/.regional_backfill_progress.txt
 data/.collect_progress.txt
+data/event_metadata.csv
+data/pr_eligibility_*.csv
+
+#never commit where players live - this repo is public
+data/player_residences.csv
 
 #ignore generated model artifacts - regenerate via src/features.py + src/upset_model.py
 data/model_features.csv

@@ -2,7 +2,9 @@
 dashboard.py
 Streamlit app: browse the Elo/Glicko-2 leaderboards and get a live win
 probability (and upset probability) for any hypothetical matchup, using
-the model trained by upset_model.py.
+the model trained by upset_model.py. The PR Eligibility tab applies the
+panel's quarterly eligibility rules (see eligibility.py) and doubles as the
+checklist for recording where players live.
 
 Run:
     streamlit run src/dashboard.py
@@ -17,6 +19,8 @@ import os
 import pandas as pd
 import streamlit as st
 
+import eligibility
+from event_metadata import META_PATH
 from features import load_matchup_matrix, matchup_delta
 from upset_model import CALIBRATION_PLOT_PATH, METRICS_PATH, MODEL_PATH, load_model, predict_proba
 
@@ -57,6 +61,12 @@ def load_metrics():
         return json.load(f)
 
 
+@st.cache_data
+def load_attendance():
+    main = eligibility.main_events(eligibility.load_metadata())
+    return main, eligibility.attendance(main)
+
+
 st.title("🎮 Smash Ult Power Rankings & Upset Predictor")
 st.caption(
     "Elo and Glicko-2 ratings computed from real bracket results, plus a "
@@ -70,7 +80,9 @@ if not (os.path.exists(ELO_PATH) and os.path.exists(GLICKO_PATH)):
 
 leaderboard = load_leaderboard()
 
-tab_leaderboard, tab_predict, tab_model = st.tabs(["Leaderboard", "Predict a Matchup", "About the Model"])
+tab_leaderboard, tab_predict, tab_eligibility, tab_model = st.tabs(
+    ["Leaderboard", "Predict a Matchup", "PR Eligibility", "About the Model"]
+)
 
 with tab_leaderboard:
     st.subheader("Leaderboard")
@@ -147,6 +159,93 @@ with tab_predict:
             st.caption(f"Character matchup ({char_a} vs {char_b}): {delta:+.1f} stocks, factored in above.")
         elif char_a != "(unknown / skip)" or char_b != "(unknown / skip)":
             st.caption("No matchup data for that character pairing - ignored.")
+
+with tab_eligibility:
+    st.subheader("PR Eligibility")
+    if not os.path.exists(META_PATH):
+        st.info("No event metadata yet - run `python src/event_metadata.py` first.")
+    else:
+        main, attended = load_attendance()
+        seasons = sorted(attended["season"].unique(), reverse=True)
+        season = st.selectbox("Season", seasons, index=0)
+        st.caption(
+            f"Counts main Ultimate singles brackets with {eligibility.MIN_ENTRANTS}+ entrants, one per tournament. "
+            f"Westchester residents need {eligibility.MIN_WESTCHESTER_TOURNAMENTS}+ Westchester tournaments; "
+            "Bronx/Rockland/Putnam/Fairfield residents also need Westchester to be their most-attended region "
+            "(ties count as eligible)."
+        )
+
+        residences = eligibility.load_residences()
+        result = eligibility.evaluate_season(attended, season, residences)
+        if result.empty:
+            st.info(f"Nobody attended {eligibility.MIN_WESTCHESTER_TOURNAMENTS}+ Westchester tournaments in {season}.")
+        else:
+            counts = result["status"].value_counts()
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Eligible", int(counts.get("eligible", 0)))
+            c2.metric("Needs residence", int(counts.get("needs residence", 0)))
+            c3.metric("Not eligible", int(counts.get("not eligible", 0)))
+
+            st.markdown("#### Where do they live?")
+            st.caption(
+                "Everyone with enough Westchester attendance this season. Set a residence and hit Save - "
+                "it's remembered across seasons, and stays on this machine only (data/player_residences.csv "
+                "is not committed)."
+            )
+            editor_df = result[["player_id", "name", "residence", "westchester", "top_other_region", "top_other_count"]].copy()
+            editor_df["residence"] = editor_df["residence"].replace("", None)
+            # Unset players first - they're the ones that need attention.
+            editor_df = editor_df.sort_values("residence", na_position="first", key=lambda s: s.notna())
+            edited = st.data_editor(
+                editor_df,
+                column_config={
+                    "player_id": None,
+                    "name": st.column_config.TextColumn("Player", disabled=True),
+                    "residence": st.column_config.SelectboxColumn("Residence", options=list(eligibility.RESIDENCE_OPTIONS)),
+                    "westchester": st.column_config.NumberColumn("WC tournaments", disabled=True),
+                    "top_other_region": st.column_config.TextColumn("Most-attended other region", disabled=True),
+                    "top_other_count": st.column_config.NumberColumn("Other region count", disabled=True),
+                },
+                hide_index=True,
+                use_container_width=True,
+                key=f"residence_editor_{season}",
+            )
+            if st.button("Save residences", type="primary"):
+                for pid, residence in zip(edited["player_id"], edited["residence"]):
+                    if residence:
+                        residences[pid] = residence
+                    else:
+                        residences.pop(pid, None)
+                names = attended.drop_duplicates("player_id").set_index("player_id")["name"].to_dict()
+                eligibility.save_residences(residences, names)
+                st.rerun()
+
+            st.markdown("#### Results")
+            for status in ("eligible", "needs residence", "not eligible"):
+                group = result[result["status"] == status]
+                if group.empty:
+                    continue
+                st.markdown(f"**{status.capitalize()} ({len(group)})**")
+                st.dataframe(
+                    group[["name", "residence", "reason", "westchester", "top_other_region", "top_other_count", "total", "conservative_rating"]],
+                    column_config={
+                        "name": "Player",
+                        "residence": "Residence",
+                        "reason": "Why",
+                        "westchester": "WC",
+                        "top_other_region": "Top other region",
+                        "top_other_count": "Count",
+                        "total": "Total tournaments",
+                        "conservative_rating": st.column_config.NumberColumn("Glicko (conservative)", format="%.0f"),
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+            one_offs = eligibility.other_westchester_tournaments(main, season)
+            if not one_offs.empty:
+                with st.expander(f"Non-Encore/Undiscovered Westchester tournaments counted this season ({len(one_offs)})"):
+                    st.dataframe(one_offs, hide_index=True, use_container_width=True)
 
 with tab_model:
     st.subheader("How the model was evaluated")
