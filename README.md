@@ -51,6 +51,12 @@ Two-tier collection, one shared data model:
   earliest sets, test on the most recent). Saves the model to
   `models/upset_model.joblib`, a calibration plot to
   `data/model_calibration.png`, and metrics to `data/model_metrics.json`.
+- `src/event_metadata.py` looks up per-event details that `raw_sets.csv`
+  doesn't carry (entrant count, online flag, team size, venue) and resolves
+  each venue to a county via the FCC census API, into
+  `data/event_metadata.csv`. Incremental - only new events get fetched.
+- `src/eligibility.py` applies the PR panel's quarterly eligibility rules
+  (see below) and writes `data/pr_eligibility_<season>.csv`.
 - `src/dashboard.py` is a Streamlit app to browse the leaderboards and get
   a live win/upset probability for any two players (optionally with
   characters), backed by the trained model.
@@ -106,6 +112,30 @@ is already in the feature set. Uncertainty (RD) turned out to be the
 better-calibrated way to represent "this player hasn't been tested much"
 than raw game count.
 
+## PR eligibility
+
+Seasons are calendar quarters (Q1 = Jan-Mar, etc.). For a given season:
+
+- **Westchester residents** qualify with 3+ Westchester tournaments.
+- **Neighboring-county residents** (Bronx, Rockland, Putnam, Fairfield CT)
+  qualify with 3+ Westchester tournaments *and* Westchester being their
+  most-attended region that season. Regions: NYC (all 5 boroughs), Long
+  Island, Connecticut, New Jersey, Westchester; any other county is its
+  own region. Ties count as eligible.
+- Nobody else qualifies.
+
+A tournament counts once, via its main bracket only - the in-person
+Ultimate 1v1 event. Redemption/amateur/novelty side brackets, doubles, HDR
+and online events don't count, and neither do tournaments whose main
+bracket had fewer than 8 entrants (in any region). Arcadians,
+invitationals and Encore Smash 101 (a practice series) never count.
+
+Where players live can't be pulled from start.gg reliably, so it's
+recorded by hand in the dashboard's **PR Eligibility** tab and stored in
+`data/player_residences.csv`, which is gitignored. Anyone with enough
+Westchester attendance but no residence on file shows up as "needs
+residence" rather than being dropped.
+
 # cr- Things to consider going forward
 1. How we used to use Ryan/Merro's elo system to help decide who gets PR tracked- gives us a solid 15-20 players to include in the paneled discussion. Ensures we're not missing anyone
 2. What weekly/monthly brackets to include in the automated collection script. Will likely focus on tristate at first so consider the same tournaments we always slug (NY, NJ, CT locals and monthlies)
@@ -149,6 +179,11 @@ python src/features.py
 # Train + backtest the upset/win-probability model
 python src/upset_model.py
 python src/upset_model.py --train-frac 0.85   # larger train split
+
+# PR eligibility: fetch event/venue details, then evaluate a season
+python src/event_metadata.py
+python src/eligibility.py                  # most recent season
+python src/eligibility.py --season 2026Q2
 
 # Launch the leaderboard + matchup-predictor dashboard
 streamlit run src/dashboard.py
