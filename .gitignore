@@ -17,3 +17,9 @@ data/elo_ratings.csv
 data/glicko_ratings.csv
 data/.regional_backfill_progress.txt
 data/.collect_progress.txt
+
+#ignore generated model artifacts - regenerate via src/features.py + src/upset_model.py
+data/model_features.csv
+data/model_calibration.png
+data/model_metrics.json
+models/

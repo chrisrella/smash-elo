@@ -161,7 +161,12 @@ def load_sets(path):
     return rows
 
 
-def compute_glicko(rows):
+def compute_glicko(rows, record_history=False):
+    """record_history=True additionally returns pre_match: dict of
+    set_id -> (rating1_pre, rd1_pre, rating2_pre, rd2_pre, games1_pre,
+    games2_pre) - each player's rating/RD/experience as of the *start of
+    that set's rating period*, i.e. what was actually knowable before the
+    set was played. See compute_elo's docstring for why this matters."""
     # Per-player state, keyed by player_id
     mu = {}
     phi = {}
@@ -169,6 +174,7 @@ def compute_glicko(rows):
     names = {}
     games_played = {}
     last_period_index = {}  # last period a player had state updated through
+    pre_match = {} if record_history else None
 
     def ensure(pid, name, period_idx):
         if pid not in mu:
@@ -213,6 +219,7 @@ def compute_glicko(rows):
 
         pre_mu = {pid: mu[pid] for pid in active_players}
         pre_phi = {pid: phi[pid] for pid in active_players}
+        pre_games = {pid: games_played.get(pid, 0) for pid in active_players}
 
         opponents_this_period = {pid: [] for pid in active_players}
         for row in period_rows:
@@ -224,6 +231,17 @@ def compute_glicko(rows):
             opponents_this_period[p2].append((pre_mu[p1], pre_phi[p1], s2))
             games_played[p1] = games_played.get(p1, 0) + 1
             games_played[p2] = games_played.get(p2, 0) + 1
+
+            if record_history:
+                # All sets in a rating period share the same pre-period
+                # snapshot (Glicko-2 batches within a period), so games
+                # played within-period aren't reflected here - only games
+                # from prior periods are "pre-match knowable".
+                r1_pre, rd1_pre = from_glicko2_scale(pre_mu[p1], pre_phi[p1])
+                r2_pre, rd2_pre = from_glicko2_scale(pre_mu[p2], pre_phi[p2])
+                pre_match[row["set_id"]] = (
+                    r1_pre, rd1_pre, r2_pre, rd2_pre, pre_games[p1], pre_games[p2]
+                )
 
         for pid in active_players:
             new_mu, new_phi, new_sigma = update_player(
@@ -246,6 +264,8 @@ def compute_glicko(rows):
         ratings[pid] = r
         rds[pid] = rd
 
+    if record_history:
+        return ratings, rds, names, games_played, pre_match
     return ratings, rds, names, games_played
 
 
